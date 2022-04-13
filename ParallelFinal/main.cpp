@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <taskflow/taskflow.hpp>
 #include <taskflow/algorithm/pipeline.hpp>
+#include "Matrix.h"
 
 void example_display() {
 	tf::Executor tfExec;
@@ -211,10 +212,31 @@ void pipe_example() {
 	std::cout << "RMS of random sequence is " << sqrt(sum / 1000) << "\n\n";
 }
 
+void example_matrix(int size, int iterations) {
+	std::vector<Matrix> matrices;
+
+	for (int n = 0; n < iterations; n++) {
+		matrices.push_back(Matrix(size, size, true));
+		matrices[n].print();
+	}
+
+	Matrix result = matrices[0];
+
+	(Matrix(size, size) * result).print();
+
+	for (int n = 1; n < iterations; n++) {
+		result = result * matrices[n];
+	}
+
+	result.print();
+}
+
+
 int main(int argc, char** argv) {
 	example_1();
 	pipe_example();
 	example_for_each();
 	example_display();
+	example_matrix(3, 2);
 	return 0;
 }
