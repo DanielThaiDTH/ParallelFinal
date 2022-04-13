@@ -169,68 +169,66 @@ The Pipe object is used to compose the pipelines. A Pipe can be a serial task, m
 
 	Pipe{PipeType, [](tf::Pipeflow&){}}
 	
-Where PipeType is one of the two values mentioned before. The Pipeflow object has several methods. `line` and `pipe` return the identifiers for the line and pipe respectively. `token` returns the token identifier and `stop` stops the pipeline scheduling. Note that the user is responsible for data safety.
+Where PipeType is one of the two values mentioned before. The Pipeflow object has several methods. `line` and `pipe` return the identifiers for the line and pipe respectively. `token` returns the token identifier and `stop` stops the pipeline scheduling. Note that the user is responsible for data safety. The user is also responsible for creating storage for the final and intermediate results from the pipeline. To execute, you need to use the `composed_of` method of `Taskflow` in order to place the pipe flow graph into a taskflow.
 
 **Example**
-	//From Taskflow docs
+	
+	//Adapted from TBB docs
 	tf::Taskflow taskflow;
 	tf::Executor executor;
 
-	const size_t num_lines = 4;
+	const size_t num_lines = 16;
 	const size_t num_pipes = 3;
 
-	// create a custom data buffer
-	std::array<std::array<int, num_pipes>, num_lines> buffer;
+	float arr[1000];
+	std::random_device rd;  //Will be used to obtain a seed for the random number engine
+	std::mt19937 gen(rd()); //Standard mersenne_twister_engine seeded with rd()
+	std::uniform_int_distribution<> distr(1, RAND_MAX);
+	int max = distr(gen);
+	std::cout << "Random max of " << max << std::endl;
 
-	// create a pipeline graph of four concurrent lines and three serial pipes
+	for (int i = 0; i < 1000; i++) {
+		arr[i] = (float)(i + distr(gen) % max);
+	}
+
+	int token_count = 0;
+	float sum = 0;
+	std::array<std::array<int, num_pipes - 1>, num_lines> arr_map;
+	std::array<std::array<float, num_pipes - 1>, num_lines> buffer;
+
 	tf::Pipeline pipeline(num_lines,
 		// first pipe must define a serial direction
-		tf::Pipe{ tf::PipeType::SERIAL, [&buffer](tf::Pipeflow& pf) {
-			// generate only 5 scheduling tokens
-			if (pf.token() == 5) {
-			  pf.stop();
-			}
-			// save the token id into the buffer
-			else {
-			  buffer[pf.line()][pf.pipe()] = pf.token();
-			}
-		  } },
-		tf::Pipe{ tf::PipeType::SERIAL, [&buffer](tf::Pipeflow& pf) {
-			  // propagate the previous result to this pipe by adding one
-			  buffer[pf.line()][pf.pipe()] = buffer[pf.line()][pf.pipe() - 1] + 1;
-			} },
-			  tf::Pipe{ tf::PipeType::SERIAL, [&buffer](tf::Pipeflow& pf) {
-				// propagate the previous result to this pipe by adding one
-				buffer[pf.line()][pf.pipe()] = buffer[pf.line()][pf.pipe() - 1] + 1;
-			  } }
-			);
+		tf::Pipe(tf::PipeType::SERIAL, [&](tf::Pipeflow& pf) {
 
-	// build the pipeline graph using composition
-	tf::Task init = taskflow.emplace([]() { std::cout << "ready\n"; })
-		.name("starting pipeline");
+			if (token_count == 1000) {
+				pf.stop();
+			} else {
+				arr_map[pf.line()][pf.pipe()] = pf.token();
+				buffer[pf.line()][pf.pipe()] = arr[pf.token()];
+				token_count++;
+			}
+
+			}),
+		tf::Pipe(tf::PipeType::PARALLEL, [&](tf::Pipeflow& pf) {
+				buffer[pf.line()][pf.pipe()] = buffer[pf.line()][pf.pipe() - 1] * buffer[pf.line()][pf.pipe() - 1];
+			}),
+		tf::Pipe(tf::PipeType::SERIAL, [&](tf::Pipeflow& pf) {
+				sum += buffer[pf.line()][pf.pipe() - 1];
+			})
+	);
+
+	//Set the pipeline
 	tf::Task task = taskflow.composed_of(pipeline)
 		.name("pipeline");
-	tf::Task stop = taskflow.emplace([]() { std::cout << "stopped\n"; })
-		.name("pipeline stopped");
-
-	// create task dependency
-	init.precede(task);
-	task.precede(stop);
 
 	// run the pipeline
 	executor.run(taskflow).wait();
 
-	for (std::array<int, num_pipes>& arr : buffer) {
-		for (int& val : arr) {
-			std::cout << val << " ";
-		}
-		std::cout << '\n';
-	}
-
-	std::cout << '\n';
+	std::cout << "RMS of random sequence is " << sqrt(sum / 1000) << "\n\n";
 	
 ## Differences
 
+TBB seems to give more control over the parallelization. The user is able to define exactly what happens using body classes, while Taskflow is simpler. Taskflow can use callables like lambda functions, so a lot of code is saved. The `parallel_for_index` method also allows non-consecutive steps, which is impossible using an iterator. The only way would be to code it in the body or a callable. This conclusion extends to the reduce as well. Another code save for Taskflow is the lack of need for a `blocked_range` object to divide up iterations for parallelization. The drawback is a lack of control over chunking and grainsize. Taskflow also lacks a parallel_scan method, so the user will have to create one themselves. TBB also has useful parallel safe containers like the `concurrent_hash_map`, `concurrent_vector` and `concurrent_queue`. In addition, TBB also has mutex types tat are useful for controlling the parallel data access. 
 
 # Task-based parallelism
 
@@ -266,6 +264,10 @@ The `Task` class is a lightweight wrapper over a node in the taskflow graph. It 
 	C.succeed(B);
 
 	tfExec.run(taskflow).wait();
+	
+# Miscellaneous Features
+
+
 
 # References
 https://taskflow.github.io/taskflow/index.html
