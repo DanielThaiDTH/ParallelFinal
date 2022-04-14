@@ -7,19 +7,21 @@
 #include <ctime>
 #include <random>
 #include <tuple>
+#include <chrono>
 #include <tbb/tbb.h>
 #include <tbb/parallel_reduce.h>
 #include <tbb/parallel_pipeline.h>
 #include <tbb/flow_graph.h>
 #include "bodies.h"
+#include "Matrix.h"
 
 using namespace tbb::flow;
 
 void example_1() {
-	int val_1 = 2, val_2 = 1, val_3 = 5, res = 0;
+	int val_1 = 2, val_2 = 1, val_3 = 5;
 
-	std::cout << "simple task, evaluate a*b + a*(a + c)\n";
-	std::cout << "a: " << val_1 << " b: " << val_2 << " c: " << val_3 << std::endl;
+	std::cout << "Simple task, evaluate x = i*j + k*(k + i) and y = k*(k + i) * (i*j)\n";
+	std::cout << "i: " << val_1 << " j: " << val_2 << " k: " << val_3 << std::endl;
 
 	tbb::flow::graph g;
 	std::pair<int, int> a_input{ val_1, val_2 };
@@ -31,15 +33,20 @@ void example_1() {
 		return v.second * (v.second + v.first); });
 	join_node<std::tuple<int, int>, queueing> c_join(g);
 	function_node<std::tuple<int, int>> c(g, 1, [](std::tuple<int, int> v) {
-		std::printf("result is %d\n\n", std::get<0>(v) + std::get<1>(v));
+		std::printf("X result is %d\n", std::get<0>(v) + std::get<1>(v));
+		});
+	function_node<std::tuple<int, int>> d(g, 1, [](std::tuple<int, int> v) {
+		std::printf("Y result is %d\n", std::get<0>(v) * std::get<1>(v));
 		});
 
 	make_edge(a, std::get<0>(c_join.input_ports())); //(pre, suc)
 	make_edge(b, std::get<1>(c_join.input_ports()));
 	make_edge(c_join, c);
+	make_edge(c_join, d);
 	a.try_put(a_input);
 	b.try_put(b_input);
 	g.wait_for_all();
+	std::printf("\n");
 }
 
 void example_for_each() {
@@ -104,10 +111,33 @@ void pipe_example() {
 	std::cout << "RMS of random sequence is " << sqrt(sum/1000) << "\n\n";
 }
 
+
+void example_matrix(int size, int iterations) {
+	std::vector<Matrix> matrices;
+
+	std::printf("Generating random (%dx%d) matrices\n", size, size);
+	for (int n = 0; n < iterations; n++) {
+		matrices.push_back(Matrix(size, size, true));
+	}
+
+	Matrix result = matrices[0];
+	std::chrono::steady_clock::time_point ts, te;
+
+	std::printf("Starting %d matrix multiplications\n", iterations);
+	ts = std::chrono::steady_clock::now();
+	for (int n = 1; n < iterations; n++) {
+		result = result * matrices[n];
+	}
+	te = std::chrono::steady_clock::now();
+	auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(te - ts);
+	std::printf("%d multiplications of (%dx%d) matrices took %dms\n", iterations, size, size, (int)ms.count());
+}
+
+
 int main(int argc, char** argv) {
-	/*example_display();*/
 	example_1();
 	example_for_each();
 	pipe_example();
+	example_matrix(1000, 4);
 	return 0;
 }

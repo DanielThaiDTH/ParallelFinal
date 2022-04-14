@@ -9,6 +9,7 @@
 #include <ctime>
 #include <random>
 #include <cstdlib>
+#include <chrono>
 #include <taskflow/taskflow.hpp>
 #include <taskflow/algorithm/pipeline.hpp>
 #include "Matrix.h"
@@ -58,24 +59,29 @@ void example_1() {
 	tf::Executor tfExec;
 	tf::Taskflow taskflow;
 
-	int val_1 = 2, val_2 = 1, val_3 = 5;
+	int val_1 = 2, val_2 = 1, val_3 = 5, x, y, a_res, b_res;
 
-	std::cout << "Simple task, evaluate a*b + c*(c + a)\n";
-	std::cout << "a: " << val_1 << " b: " << val_2 << " c: " << val_3 << std::endl;
+	std::cout << "Simple task, evaluate x = i*j + k*(k + i) and y = k*(k + i) * (i*j)\n";
+	std::cout << "i: " << val_1 << " j: " << val_2 << " k: " << val_3 << std::endl;
 
-	tf::Task C = taskflow.emplace([&]() { std::printf("Result is %d\n\n", val_2 + val_3);  });
-	tf::Task A = taskflow.emplace([&]() { val_2 *= val_1; });
+	tf::Task C = taskflow.emplace([&]() { std::printf("X result is %d\n", a_res + b_res);  });
+	tf::Task A = taskflow.emplace([&]() { a_res = val_2 * val_1; });
 	tf::Task B = taskflow.emplace([&]() {
-		val_3 = val_3*(val_3 + val_1);
+		b_res = val_3*(val_3 + val_1);
 	});
+	tf::Task D = taskflow.emplace([&]() { std::printf("Y result is %d\n", a_res * b_res); });
 
 	A.name("A");
 	B.name("B");
 	C.name("C");
+	D.name("D");
 
 	A.precede(C);
 	C.succeed(B);
+	D.succeed(A);
+	D.succeed(B);
 
+	taskflow.dump(std::cout);
 	tfExec.run(taskflow).wait();
 	std::cout << '\n';
 }
@@ -215,20 +221,23 @@ void pipe_example() {
 void example_matrix(int size, int iterations) {
 	std::vector<Matrix> matrices;
 
+	std::printf("Generating random (%dx%d) matrices\n", size, size);
 	for (int n = 0; n < iterations; n++) {
 		matrices.push_back(Matrix(size, size, true));
-		matrices[n].print();
 	}
 
 	Matrix result = matrices[0];
+	std::chrono::steady_clock::time_point ts, te;
 
-	(Matrix(size, size) * result).print();
-
+	std::printf("Starting %d matrix multiplications\n", iterations);
+	ts = std::chrono::steady_clock::now();
 	for (int n = 1; n < iterations; n++) {
 		result = result * matrices[n];
 	}
+	te = std::chrono::steady_clock::now();
+	auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(te-ts);
+	std::printf("%d multiplications of (%dx%d) matrices took %dms\n", iterations, size, size, (int)ms.count());
 
-	result.print();
 }
 
 
@@ -237,6 +246,6 @@ int main(int argc, char** argv) {
 	pipe_example();
 	example_for_each();
 	example_display();
-	example_matrix(3, 2);
+	example_matrix(1000, 4);
 	return 0;
 }
