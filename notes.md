@@ -270,6 +270,12 @@ The `Task` class is a lightweight wrapper over a node in the taskflow graph. It 
 
 
 # References
+https://oneapi-src.github.io/oneTBB/GSG/get_started.html
+
+https://taskflow.github.io/
+
+https://taskflow.github.io/taskflow/install.html
+
 https://taskflow.github.io/taskflow/index.html
 
 https://taskflow.github.io/taskflow/ParallelPipeline.html

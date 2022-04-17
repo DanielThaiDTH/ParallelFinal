@@ -8,6 +8,10 @@
 
 class Matrix;
 
+/// <summary>
+/// Body used for a parallel for
+/// </summary>
+/// <typeparam name="A">Callable, applied each iteration</typeparam>
 template<typename A>
 class TBBMatrixBody {
 	A action;
@@ -20,7 +24,9 @@ public:
 	}
 };
 
-
+/// <summary>
+/// TBB parallelized Matrix
+/// </summary>
 class Matrix {
 	double** data = nullptr;
 	int rows;

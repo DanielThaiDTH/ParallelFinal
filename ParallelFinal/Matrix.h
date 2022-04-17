@@ -5,6 +5,9 @@
 #include <cstdio>
 #include <taskflow/taskflow.hpp>
 
+/// <summary>
+/// Taskflow parallelized Matrix
+/// </summary>
 class Matrix {
 	double** data = nullptr;
 	int rows;

@@ -69,27 +69,30 @@ void example_for_each() {
 	tbb::parallel_for(range, applyOdd);
 }
 
-void pipe_example() {
-	float arr[1000];
+void pipe_example(int count = 1000) {
+	double* arr = new double[count];
 	std::random_device rd;  //Will be used to obtain a seed for the random number engine
 	std::mt19937 gen(rd()); //Standard mersenne_twister_engine seeded with rd()
 	std::uniform_int_distribution<> distr(1, RAND_MAX);
 	int max = distr(gen);
 	std::cout << "Random max of " << max << std::endl;
 
-	for (int i = 0; i < 1000; i++) {
-		arr[i] = (float)(i + distr(gen) % max);
+	for (int i = 0; i < count; i++) {
+		arr[i] = (double)(distr(gen) % max);
 	}
 
-	float* first = arr;
-	float* last = arr + 1000;
+	double* first = arr;
+	double *last = arr + count;
 
 	//Below from TBB docs
-	float sum = 0;
+	double sum = 0;
+
+	std::chrono::steady_clock::time_point ts, te;
+	ts = std::chrono::steady_clock::now();
 	tbb::parallel_pipeline( /*max_number_of_live_token=*/16,
-		tbb::make_filter<void, float*>(
+		tbb::make_filter<void, double*>(
 			tbb::filter_mode::serial_in_order,
-			[&](tbb::flow_control& fc)-> float* {
+			[&](tbb::flow_control& fc)-> double* {
 				if (first < last) {
 					return first++;
 				} else {
@@ -98,17 +101,32 @@ void pipe_example() {
 				}
 			}
 			) &
-		tbb::make_filter<float*, float>(
+		tbb::make_filter<double*, double>(
 			tbb::filter_mode::parallel,
-			[](float* p) {return (*p) * (*p); }
+			[&count](double* p) {return ((*p) * (*p))/count; }
 			) &
-				tbb::make_filter<float, void>(
+				tbb::make_filter<double, void>(
 					tbb::filter_mode::serial_out_of_order,
-					[&](float x) {sum += x; }
+					[&](double x) {sum += x; }
 					)
 				);
+	te = std::chrono::steady_clock::now();
 
-	std::cout << "RMS of random sequence is " << sqrt(sum/1000) << "\n\n";
+	auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(te - ts);
+
+	std::cout << "RMS of random sequence is " << sqrt(sum) << "\n";
+	std::printf("RMS calculation took %dms\n", (int)ms.count());
+
+	sum = 0;
+	ts = std::chrono::steady_clock::now();
+	for (int i = 0; i < count; i++) {
+		sum += arr[i] * arr[i];
+	}
+	te = std::chrono::steady_clock::now();
+	ms = std::chrono::duration_cast<std::chrono::milliseconds>(te - ts);
+	std::printf("Serial RMS calculation took %dms\n", (int)ms.count());
+	std::cout << "Validation " << sqrt(sum / count) << "\n\n";
+	delete[] arr;
 }
 
 
@@ -134,10 +152,59 @@ void example_matrix(int size, int iterations) {
 }
 
 
+int inputRange(std::string prompt, int min, int max)
+{
+	if (min > max) {
+		std::cout << "The minimum value pass to the inputRange function was \
+						larger than the maximum value.\n";
+		return INT_MIN;
+	}
+
+	int ans = INT_MIN;
+
+	while (true) {
+		std::cout << prompt;
+		if (!(std::cin >> ans)) {
+			std::cin.clear();
+		}
+		std::cin.ignore(1000, '\n');
+
+		if (ans >= min && ans <= max)
+			break;
+
+	}
+
+	return ans;
+}
+
+
 int main(int argc, char** argv) {
-	example_1();
-	example_for_each();
-	pipe_example();
-	example_matrix(1000, 4);
+	int choice = -1;
+	while (choice != 0) {
+		std::cout << "Please select example to run.\n";
+		std::cout << "*****************************\n";
+		std::cout << "Graph example: 1\n"
+			<< "For each example: 2\n"
+			<< "Pipe example: 3\n"
+			<< "Matrix example: 4\n"
+			<< "Exit: 0\n\n";
+		choice = inputRange("Enter: ", 0, 4);
+		switch (choice) {
+		case 1: 
+			example_1();
+			break;
+		case 2:
+			example_for_each();
+			break;
+		case 3:
+			pipe_example(100000);
+			break;
+		case 4:
+			example_matrix(600, 4);
+			break;
+		default:
+			break;
+		}
+	}
 	return 0;
 }

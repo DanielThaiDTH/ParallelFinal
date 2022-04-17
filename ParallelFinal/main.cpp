@@ -25,7 +25,6 @@ void example_display() {
 		[]() { std::cout << "TaskD\n"; }
 	);
 
-
 	A.name("A");
 	B.name("B");
 	C.name("C");
@@ -71,17 +70,11 @@ void example_1() {
 	});
 	tf::Task D = taskflow.emplace([&]() { std::printf("Y result is %d\n", a_res * b_res); });
 
-	A.name("A");
-	B.name("B");
-	C.name("C");
-	D.name("D");
-
 	A.precede(C);
 	C.succeed(B);
 	D.succeed(A);
 	D.succeed(B);
 
-	taskflow.dump(std::cout);
 	tfExec.run(taskflow).wait();
 	std::cout << '\n';
 }
@@ -166,47 +159,48 @@ void pipe_example_old() {
 }
 
 //Using TBB example
-void pipe_example() {
+void pipe_example(int count = 1000) {
 	tf::Taskflow taskflow;
 	tf::Executor executor;
 
 	const size_t num_lines = 16;
 	const size_t num_pipes = 3;
 
-	float arr[1000];
+	double* arr = new double[count];
 	std::random_device rd;  //Will be used to obtain a seed for the random number engine
 	std::mt19937 gen(rd()); //Standard mersenne_twister_engine seeded with rd()
 	std::uniform_int_distribution<> distr(1, RAND_MAX);
 	int max = distr(gen);
 	std::cout << "Random max of " << max << std::endl;
 
-	for (int i = 0; i < 1000; i++) {
-		arr[i] = (float)(i + distr(gen) % max);
+	for (int i = 0; i < count; i++) {
+		arr[i] = (double)(distr(gen) % max);
 	}
 
 	int token_count = 0;
-	float sum = 0;
-	std::array<std::array<float, num_pipes - 1>, num_lines> buffer;
+	double sum = 0;
+	std::array<std::array<double, num_pipes - 1>, num_lines> buffer;
 
+	std::chrono::steady_clock::time_point ts, te;
+	ts = std::chrono::steady_clock::now();
 	tf::Pipeline pipeline(num_lines,
 		// first pipe must define a serial direction
 		tf::Pipe(tf::PipeType::SERIAL, [&](tf::Pipeflow& pf) {
 
-			if (token_count == 1000) {
+			if (token_count == count) {
 				pf.stop();
 			} else {
-				buffer[pf.line()][pf.pipe()] = arr[pf.token()];
 				token_count++;
 			}
 
 			}),
 		tf::Pipe(tf::PipeType::PARALLEL, [&](tf::Pipeflow& pf) {
-				buffer[pf.line()][pf.pipe()] = buffer[pf.line()][pf.pipe() - 1] * buffer[pf.line()][pf.pipe() - 1];
+				buffer[pf.line()][pf.pipe()] = arr[pf.token()] * arr[pf.token()];
 			}),
-		tf::Pipe(tf::PipeType::SERIAL, [&](tf::Pipeflow& pf) {
+				tf::Pipe(tf::PipeType::SERIAL, [&](tf::Pipeflow& pf) {
 				sum += buffer[pf.line()][pf.pipe() - 1];
-			})
-	);
+					})
+				);
 
 	//Set the pipeline
 	tf::Task task = taskflow.composed_of(pipeline)
@@ -214,8 +208,23 @@ void pipe_example() {
 
 	// run the pipeline
 	executor.run(taskflow).wait();
+	te = std::chrono::steady_clock::now();
 
-	std::cout << "RMS of random sequence is " << sqrt(sum / 1000) << "\n\n";
+	auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(te - ts);
+
+	std::cout << "RMS of random sequence is " << sqrt(sum / count) << "\n";
+	std::printf("RMS calculation took %dms\n", (int)ms.count());
+
+	sum = 0;
+	ts = std::chrono::steady_clock::now();
+	for (int i = 0; i < count; i++) {
+		sum += arr[i] * arr[i];
+	}
+	te = std::chrono::steady_clock::now();
+	ms = std::chrono::duration_cast<std::chrono::milliseconds>(te - ts);
+	std::printf("Serial RMS calculation took %dms\n", (int)ms.count());
+	std::cout << "Validation " << sqrt(sum / count) << "\n\n";
+	delete[] arr;
 }
 
 void example_matrix(int size, int iterations) {
@@ -237,15 +246,66 @@ void example_matrix(int size, int iterations) {
 	te = std::chrono::steady_clock::now();
 	auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(te-ts);
 	std::printf("%d multiplications of (%dx%d) matrices took %dms\n", iterations, size, size, (int)ms.count());
+}
 
+
+int inputRange(std::string prompt, int min, int max)
+{
+	if (min > max) {
+		std::cout << "The minimum value pass to the inputRange function was \
+						larger than the maximum value.\n";
+		return INT_MIN;
+	}
+
+	int ans = INT_MIN;
+
+	while (true) {
+		std::cout << prompt;
+		if (!(std::cin >> ans)) {
+			std::cin.clear();
+		}
+		std::cin.ignore(1000, '\n');
+
+		if (ans >= min && ans <= max)
+			break;
+
+	}
+
+	return ans;
 }
 
 
 int main(int argc, char** argv) {
-	example_1();
-	pipe_example();
-	example_for_each();
-	example_display();
-	example_matrix(1000, 4);
+	int choice = -1;
+	while (choice != 0) {
+		std::cout << "Please select example to run.\n";
+		std::cout << "*****************************\n";
+		std::cout << "Graph example: 1\n"
+			<< "For each example: 2\n"
+			<< "Pipe example: 3\n"
+			<< "Matrix example: 4\n"
+			<< "Graph visualize example: 5\n"
+			<< "Exit: 0\n\n";
+		choice = inputRange("Enter: ", 0, 5);
+		switch (choice) {
+		case 1:
+			example_1();
+			break;
+		case 2:
+			example_for_each();
+			break;
+		case 3:
+			pipe_example(3200000);
+			break;
+		case 4:
+			example_matrix(600, 4);
+			break;
+		case 5:
+			example_display();
+			break;
+		default:
+			break;
+		}
+	}
 	return 0;
 }
